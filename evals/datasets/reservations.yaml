@@ -1,0 +1,235 @@
+# Casos de agendamiento. `offset_dias` se convierte en `fecha` (hooks.py).
+# `clima` elige una lectura de escenario (provider.py, mismos valores que
+# tests/test_bookings.py) o `live` para Open-Meteo real.
+# Métricas:
+#   tool_execution -> qué tools se llamaron, con qué argumentos y en qué orden
+#   estado_real    -> efecto real en la SQLite del caso (garantía en código)
+#   consistency    -> lo que afirma la respuesta frente a lo que ocurrió
+#                     (citas creadas, IDs y fechas mencionadas)
+# Umbral de latencia reservas: 45000 ms (definido para esta evaluación).
+
+- description: "R1 Reserva válida con clima ideal"
+  vars:
+    offset_dias: 3
+    clima: ideal
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Ana López."
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "La cita de salto de Ana López para el {{fecha}} a las 10:00 quedó confirmada porque el clima es ideal."
+    - type: icontains
+      metric: deterministic
+      value: "confirmada"
+    - type: regex
+      metric: deterministic
+      value: "\\b[0-9a-f]{32}\\b"
+    - &booking_latency
+      type: latency
+      metric: latency
+      threshold: 45000
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { gestionar_operaciones: 1, consultar_clima_salto: 1 }
+        count: { calendarizar_cita: 1 }
+        not_called: [responder_faq]
+        args:
+          consultar_clima_salto: { fecha_iso: "{{fecha}}" }
+          calendarizar_cita: { fecha_iso: "{{fecha}}", hora: "10:00", nombre_cliente: "Ana López" }
+        weather_before_booking: true
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 1, estado: confirmada }
+    - &claims
+      type: python
+      metric: consistency
+      value: file://assertions/tool_calls.py:check_claims
+    - &dates
+      type: python
+      metric: consistency
+      value: file://assertions/tool_calls.py:check_dates
+
+- description: "R2 Reserva con clima marginal (pendiente de revisión)"
+  vars:
+    offset_dias: 3
+    clima: marginal
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Carlos Méndez."
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "La cita de Carlos Méndez para el {{fecha}} a las 10:00 quedó registrada como pendiente de revisión, no confirmada, porque el clima es marginal: viento de 20 km/h (entre 20 y 28 km/h), con la restricción de solo tándem experimentado."
+    - type: icontains
+      metric: deterministic
+      value: "experimentado"
+    - type: regex
+      metric: deterministic
+      value: "[Pp]endiente"
+    - *booking_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { consultar_clima_salto: 1 }
+        count: { calendarizar_cita: 1 }
+        not_called: [responder_faq]
+        args:
+          calendarizar_cita: { fecha_iso: "{{fecha}}", hora: "10:00", nombre_cliente: "Carlos Méndez" }
+        weather_before_booking: true
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 1, estado: pendiente_revision }
+    - *claims
+    - *dates
+
+- description: "R3 Rechazo por lluvia (clima prohibido)"
+  vars:
+    offset_dias: 3
+    clima: prohibido-lluvia
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Lucía Ramírez."
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "No se puede agendar la cita para el {{fecha}} porque el clima está prohibido: precipitación de 0.1 mm; saltar con lluvia daña el equipo y lastima la piel."
+    - type: icontains-any
+      metric: deterministic
+      value: ["lluvia", "precipitación", "precipitacion"]
+    - *booking_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { consultar_clima_salto: 1 }
+        args:
+          consultar_clima_salto: { fecha_iso: "{{fecha}}" }
+        # Regla del Submanager: con clima prohibido no se calendariza.
+        not_called: [calendarizar_cita, responder_faq]
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 0, booking_outputs: { registrada: false } }
+    - *claims
+    - *dates
+
+- description: "R4 Rechazo por ráfagas (clima prohibido)"
+  vars:
+    offset_dias: 3
+    clima: prohibido-rafagas
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Pedro Gómez."
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "No se puede agendar la cita para el {{fecha}} porque el clima está prohibido: ráfagas de viento de 36 km/h superan 35 km/h."
+    - type: icontains-any
+      metric: deterministic
+      value: ["ráfaga", "rafaga"]
+    - type: regex
+      metric: deterministic
+      value: "3[56]([.,]\\d+)?\\s*km/h"
+    - *booking_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { consultar_clima_salto: 1 }
+        args:
+          consultar_clima_salto: { fecha_iso: "{{fecha}}" }
+        not_called: [calendarizar_cita, responder_faq]
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 0, booking_outputs: { registrada: false } }
+    - *claims
+    - *dates
+
+# Validación real de fecha (sin reemplazo): el error ocurre antes de la red.
+- description: "R5 Fecha fuera del horizonte de pronóstico"
+  vars:
+    offset_dias: 30
+    clima: live
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Sofía Herrera."
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "No se puede consultar el pronóstico ni agendar la cita para el {{fecha}}: Open-Meteo solo permite consultar hasta 16 días incluyendo hoy."
+    - type: regex
+      metric: deterministic
+      value: "16\\s*d[ií]as"
+    - *booking_latency
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 0, booking_outputs: { registrada: false } }
+    - *claims
+
+- description: "R6 Datos incompletos (sin nombre ni hora)"
+  vars:
+    offset_dias: 3
+    clima: ideal
+    mensaje: "Quiero agendar un salto para el {fecha}."
+  assert:
+    - type: icontains
+      metric: deterministic
+      value: "nombre"
+    - *booking_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        # Instrucciones del Agente Reservas: registrar solo con nombre y hora acordados.
+        not_called: [calendarizar_cita]
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 0 }
+    - *claims
+    - *dates
+
+- description: "R7 Reserva repetida (ya existía)"
+  vars:
+    offset_dias: 3
+    clima: ideal
+    precargar_reserva: { fecha: "{fecha}", nombre: "Ana López", hora: "10:00" }
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Ana López."
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "Ya existía una cita confirmada de Ana López para el {{fecha}} a las 10:00; se conserva la misma cita y no se creó un duplicado."
+    - *booking_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        count: { calendarizar_cita: 1 }
+        weather_before_booking: true
+        booking_outputs: { ya_existia: true }
+    - type: python
+      metric: estado_real
+      value: file://assertions/tool_calls.py:check_tools
+      config: { rows: 1, estado: confirmada }
+    - *claims
+    - *dates
+
+# Open-Meteo real: el veredicto cambia cada día, así que no hay referencia
+# fija de factuality; se exige coherencia entre veredicto real, base y texto.
+- description: "R8 Open-Meteo real (sin escenario)"
+  vars:
+    offset_dias: 2
+    clima: live
+    mensaje: "Quiero calendarizar un salto para el {fecha} a las 10:00. Mi nombre es Mario Castillo."
+  assert:
+    - *booking_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { consultar_clima_salto: 1 }
+        args:
+          consultar_clima_salto: { fecha_iso: "{{fecha}}" }
+    - type: python
+      metric: consistency
+      value: file://assertions/tool_calls.py:check_live_consistency
+    - *claims
+    - *dates

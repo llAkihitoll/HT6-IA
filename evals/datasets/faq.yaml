@@ -1,0 +1,144 @@
+# Casos de FAQ. Las referencias de factuality se toman del corpus real
+# (data/Corpus_FAQs_Parachute_SA_2026.txt); el FAQ citado aparece en `description`.
+# Umbral de latencia FAQ: 20000 ms (definido para esta evaluación, ver README).
+
+- description: "F1 FAQ-021 · Peso máximo permitido"
+  vars:
+    mensaje: "¿Cuál es el peso máximo permitido para saltar?"
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "El límite de peso máximo estricto para el salto tándem es de 100 kg. Cada participante es pesado en el registro; si el peso está entre 90 kg y 100 kg se aplica un recargo administrativo de Q250."
+    - type: contains
+      metric: deterministic
+      value: "100"
+    - type: regex
+      metric: deterministic
+      value: "100\\s?kg"
+    - type: regex
+      metric: citation
+      value: "FAQ[-‑]\\d{3}"
+    - &faq_latency
+      type: latency
+      metric: latency
+      threshold: 20000
+    - &faq_tools
+      type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { responder_faq: 1, buscar_faq: 1 }
+        not_called: [gestionar_operaciones, consultar_clima_salto, calendarizar_cita]
+
+- description: "F2 FAQ-023 · Edad mínima"
+  vars:
+    mensaje: "¿Cuál es la edad mínima para saltar?"
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "La edad mínima para participar es de 18 años cumplidos presentando DPI o pasaporte. Menores de 16 y 17 años solo pueden participar acompañados de ambos padres o tutores legales, que deben firmar la autorización en sitio."
+    - type: contains
+      metric: deterministic
+      value: "18"
+    - type: regex
+      metric: deterministic
+      value: "18\\s*años"
+    - type: regex
+      metric: citation
+      value: "FAQ[-‑]\\d{3}"
+    - *faq_latency
+    - *faq_tools
+
+- description: "F3 FAQ-029 · Espera después de bucear"
+  vars:
+    mensaje: "¿Cuánto tiempo debo esperar después de bucear para poder saltar?"
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "Se requiere un intervalo mínimo de 24 horas entre la última inmersión de buceo y la hora del salto, para evitar el riesgo de enfermedad por descompresión."
+    - type: regex
+      metric: deterministic
+      value: "24\\s*(horas|h\\b)"
+    - type: regex
+      metric: citation
+      value: "FAQ[-‑]\\d{3}"
+    - *faq_latency
+    - *faq_tools
+
+- description: "F4 FAQ-049 · Altura del salto"
+  vars:
+    mensaje: "¿A qué altura se realiza el salto tándem?"
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "El salto se realiza a 3,000 metros (aproximadamente 10,000 pies) sobre el nivel medio del mar, y el instructor despliega el paracaídas principal a 1,500 metros sobre el terreno."
+    - type: regex
+      metric: deterministic
+      value: "3[,.\\s]?000\\s*(m\\b|metros)"
+    - type: regex
+      metric: citation
+      value: "FAQ[-‑]\\d{3}"
+    - *faq_latency
+    - *faq_tools
+
+- description: "F5 FAQ-081 · Cámara personal"
+  vars:
+    mensaje: "¿Puedo llevar mi propia cámara GoPro durante el salto?"
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "No. Por regulaciones de la DGAC y la USPA no se permite usar cámaras, teléfonos celulares o Go-Pro personales durante el vuelo o la caída libre; la empresa ofrece servicios de video y fotografía profesional."
+    - type: icontains-any
+      metric: deterministic
+      value: ["no se permite", "no está permitido", "no esta permitido", "no puedes", "no es posible", "prohibid"]
+    - type: regex
+      metric: citation
+      value: "FAQ[-‑]\\d{3}"
+    - *faq_latency
+    - *faq_tools
+
+# FAQ-061 es una ficha plantilla: el corpus NO indica el precio y remite a
+# soporte. Agregar información (categoría B, "superset") cuenta como fallo.
+- description: "F6 FAQ-061 · Precio no disponible en el corpus (no inventar)"
+  vars:
+    mensaje: "¿Cuánto cuesta el salto tándem básico?"
+  options:
+    factuality:
+      superset: 0
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "Las FAQs de Parachute S.A. no indican el precio del salto tándem básico; para detalles se debe consultar a la central de atención al cliente en soporte@parachutesa.gt."
+    - type: icontains
+      metric: deterministic
+      value: "soporte@parachutesa.gt"
+    - type: not-regex
+      metric: deterministic
+      # Ningún precio inventado. Q250 sí existe en el corpus (recargo por peso).
+      value: "(Q|US\\$|\\$|USD)\\s?(?!250\\b)\\d"
+    - *faq_latency
+    - *faq_tools
+
+# Pregunta fuera del corpus. Con el umbral actual la búsqueda devuelve 5 FAQs
+# irrelevantes (similitud 0.42-0.45): se evalúa que el agente no invente.
+- description: "F7 Fuera del corpus · Clases de surf (no inventar)"
+  vars:
+    mensaje: "¿Ofrecen clases de surf en la playa?"
+  options:
+    factuality:
+      superset: 0
+  assert:
+    - type: factuality
+      metric: factuality
+      value: "Las FAQs de Parachute S.A. no contienen información sobre clases de surf."
+    - type: not-regex
+      metric: deterministic
+      # Sin precios ni horarios inventados.
+      value: "(Q|US\\$|\\$|USD)\\s?\\d|\\b\\d{1,2}:\\d{2}\\b"
+    - *faq_latency
+    - type: python
+      metric: tool_execution
+      value: file://assertions/tool_calls.py:check_tools
+      config:
+        called: { buscar_faq: 1 }
+        not_called: [gestionar_operaciones, calendarizar_cita]
