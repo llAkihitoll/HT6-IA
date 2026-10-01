@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+# HT6 — Evals de la arquitectura jerárquica de HT5 (Parachute S.A.)
+# Ejecutar desde la raíz de HT6 con el venv activo: npm run eval
+description: "HT6 Evals · Parachute S.A. · arquitectura jerárquica (Supervisor → FAQ / Submanager → Clima + Reservas)"
+
+# El mensaje del usuario llega tal cual al Supervisor General.
+prompts:
+  - "{{mensaje}}"
+
+providers:
+  - id: file://provider.py
+    label: jerarquica-gpt-oss-20b
+    config:
+      base_url: https://integrate.api.nvidia.com/v1
+      api_key_env: NVIDIA_API_KEY
+      agent_model: openai/gpt-oss-20b
+      # Base pgvector de HT6 (no es un secreto). La API key se lee de .env.
+      database_url: postgresql://parachute:parachute_local@localhost:5434/parachute_faqs
+      workers: 1
+      timeout: 300000
+
+# Resuelve `offset_dias` a fechas reales antes de cada caso.
+extensions:
+  - file://hooks.py:extension_hook
+
+# Un caso a la vez: los escenarios climáticos se aplican al proceso del
+# provider y así la latencia de un caso no se mezcla con la de otro.
+evaluateOptions:
+  maxConcurrency: 1
+
+defaultTest:
+  options:
+    # Grader de factuality: modelo distinto al del agente.
+    provider:
+      id: openai:chat:z-ai/glm-5.3
+      config:
+        apiBaseUrl: https://integrate.api.nvidia.com/v1
+        apiKeyEnvar: NVIDIA_API_KEY
+        temperature: 0
+        # glm-5.3 razona antes de responder: con 4096 tokens agotaba el
+        # presupuesto sin emitir veredicto ("No output" / JSON truncado).
+        max_tokens: 16384
+
+tests:
+  - file://datasets/faq.yaml
+  - file://datasets/reservations.yaml
