@@ -1,4 +1,41 @@
-# HT5 — Sistemas multiagentes para Parachute S.A.
+# HT6 — Evals del agente de Parachute S.A.
+
+Este repositorio cierra el ciclo de desarrollo del agente de la Hoja de
+trabajo #5 con **evals en [Promptfoo](https://www.promptfoo.dev/)**. Se evalúa
+la arquitectura **jerárquica**, la elegida por el equipo en la HT5, sobre sus
+dos funcionalidades: preguntas frecuentes y agendamiento de citas. Se usan
+graders de factuality, deterministas (contains/regex), latencia y ejecución
+real de herramientas.
+
+- **Documentación completa de los evals:** [evals/README.md](evals/README.md)
+  (instalación, ejecución, graders, matriz, resultados, hallazgos y limitaciones).
+- **Reporte de Promptfoo:** [evals/reports/report.html](evals/reports/report.html)
+  y [evals/reports/results.json](evals/reports/results.json).
+- **Resultado de la ejecución final:** 10 de 15 casos pasan. Todas las
+  verificaciones de tool calls y de estado real de la base pasan (21 de 21). Los
+  fallos son citas perdidas (F3, F4), información engañosa ante una pregunta
+  sin respuesta (F6), no avisar de una cita duplicada (R7) y latencia (R2).
+
+Ejecución rápida, desde la raíz y con el venv activo (detalle en
+[evals/README.md](evals/README.md)):
+
+```bash
+python -m pip install -r requirements.txt && npm install
+POSTGRES_PORT=5434 docker compose up -d --wait
+DATABASE_URL=postgresql://parachute:parachute_local@localhost:5434/parachute_faqs python -m shared.faq_store.load_data
+npm run eval        # requiere NVIDIA_API_KEY en .env
+python -m pytest -q # 103 pruebas, sin API ni red
+```
+
+El código del agente (`hierarchical/`, `centralized/`, `decentralized/`,
+`shared/`) se copió **sin cambios** desde `HT5-IA` (`origin/master`, commit
+`68c5783`). Lo nuevo de la HT6 es `evals/`, `tests/test_eval_assertions.py`,
+`package.json` y `package-lock.json`, más las variables nuevas en
+`.env.example` y `node_modules/` en `.gitignore`.
+
+---
+
+# Proyecto base (HT5) — Sistemas multiagentes para Parachute S.A.
 
 Tres programas resuelven FAQs, consulta climática y registro de citas con las
 mismas integraciones. Las diferencias están en la orquestación.
