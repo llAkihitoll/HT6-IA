@@ -1,0 +1,12 @@
+{
+  "name": "ht6-evals-parachute",
+  "private": true,
+  "description": "Evals con Promptfoo de la arquitectura jerárquica de HT5 (Parachute S.A.)",
+  "scripts": {
+    "eval": "promptfoo eval -c evals/promptfooconfig.yaml --no-cache -o evals/reports/report.html -o evals/reports/results.json",
+    "eval:view": "promptfoo view"
+  },
+  "devDependencies": {
+    "promptfoo": "0.123.1"
+  }
+}
